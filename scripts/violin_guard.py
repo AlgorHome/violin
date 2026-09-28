@@ -50,6 +50,10 @@ def cmd_init_engagement(args: argparse.Namespace) -> int:
     )
 
 
+def cmd_approve_engagement(args: argparse.Namespace) -> int:
+    return bootstrap.approve_engagement(args.eng_dir)
+
+
 def cmd_validate_scope(args: argparse.Namespace) -> int:
     result = command.validate_scope(Path(args.scope))
     code = result.exit_code()
@@ -227,6 +231,10 @@ def main() -> int:
         help="Record the Hermes session ID for receipt-backed CTF bootstrap",
     )
     p.set_defaults(func=cmd_init_engagement)
+
+    p = sub.add_parser("approve-engagement", help="Show scope and request a human Yes/No decision")
+    p.add_argument("--eng-dir", required=True)
+    p.set_defaults(func=cmd_approve_engagement)
 
     # record-ptt
     p = sub.add_parser("record-ptt", help="Update PTT task status")
