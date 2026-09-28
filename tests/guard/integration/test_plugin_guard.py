@@ -821,6 +821,30 @@ def test_init_engagement_persists_explicit_session_id(tmp_path):
     assert state.resolve_session_id(eng) == "ctf-eu1"
 
 
+def test_ctf_reinitialization_preserves_existing_scope_and_state(tmp_path):
+    eng = tmp_path / "owned-lab"
+    assert bootstrap.init_engagement(eng, host="127.0.0.1", ctf=True) == 0
+    scope_path = eng / "scope" / "scope.yaml"
+    scope_path.write_text("operator-approved custom scope\n", encoding="utf-8")
+    ptt_path = eng / "state" / "ptt.md"
+    ptt_before = ptt_path.read_text(encoding="utf-8")
+
+    assert bootstrap.init_engagement(eng, host="192.0.2.10", ctf=True) == 1
+    assert scope_path.read_text(encoding="utf-8") == "operator-approved custom scope\n"
+    assert ptt_path.read_text(encoding="utf-8") == ptt_before
+
+
+def test_ctf_bootstrap_does_not_seed_partial_existing_engagement(tmp_path):
+    eng = tmp_path / "partial-lab"
+    scope_path = eng / "scope" / "scope.yaml"
+    scope_path.parent.mkdir(parents=True)
+    scope_path.write_text("custom scope\n", encoding="utf-8")
+
+    assert bootstrap.init_engagement(eng, host="127.0.0.1", ctf=True) == 1
+    assert scope_path.read_text(encoding="utf-8") == "custom scope\n"
+    assert not (eng / "state").exists()
+
+
 def test_auto_repair_creates_missing_artifacts(tmp_path):
     """`check-bootstrap --auto-repair` self-heals missing required files."""
     import yaml

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import sys
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -14,12 +15,13 @@ from pathlib import Path
 import yaml
 
 from .results import GuardResult
-from .state import ensure_dir, record_session_id, resolve_eng_dir
+from .state import atomic_text, ensure_dir, record_session_id, resolve_eng_dir, workflow_lock
 
 __all__ = [
     "init_engagement",
     "check_bootstrap",
     "BootstrapResult",
+    "approve_engagement",
 ]
 
 _HOST_RE = re.compile(r"([0-9]{1,3}(?:\.[0-9]{1,3}){3}|[0-9a-fA-F:]+|[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})")
@@ -184,7 +186,7 @@ def _ctf_scope(host: str) -> dict:
             ],
             "forbidden_actions": [],
         },
-        "authorisation": {"confirmed": True, "confirmed_by": "user (HTB lab owner)"},
+        "authorisation": {"confirmed": False, "confirmed_by": ""},
         "engagement": {
             "name": f"CTF {host}",
             "date": date.today().isoformat(),
@@ -203,6 +205,15 @@ def init_engagement(
     eng_dir = resolve_eng_dir(eng_dir)
     result = BootstrapResult()
     host = (host or "").strip() or _derive_host(eng_dir)
+
+    # The CTF preset asserts authorization and replaces the default scope.
+    # Never use it to overwrite a scope that an operator may have narrowed.
+    if ctf and (eng_dir / "scope" / "scope.yaml").exists():
+        result.add_error(
+            "CTF scope already exists; edit the existing scope explicitly or choose a new engagement directory"
+        )
+        result.print()
+        return 1
 
     ensure_dir(eng_dir)
     record_session_id(eng_dir, session_id)
@@ -234,13 +245,75 @@ def init_engagement(
         return 1
 
     if ctf:
-        result.add_info(f"engagement initialized and ready for authorized CTF work: {eng_dir}")
+        result.add_info(
+            f"CTF scope initialized; request operator approval before target work: {eng_dir}"
+        )
     else:
         result.add_info(
             f"engagement initialized; confirm scope authorization before target work: {eng_dir}"
         )
     result.print()
     return 0
+
+
+def approve_engagement(eng_dir: str | Path, *, input_fn=input, require_tty: bool = True) -> int:
+    """Ask an operator to approve the displayed scope once, then record the answer."""
+    from ..gates.scope_gate import validate_scope
+
+    if require_tty and not sys.stdin.isatty():
+        print("ERROR: approval requires an interactive terminal; no decision was recorded")
+        return 1
+    eng_dir = resolve_eng_dir(eng_dir)
+    scope_path = eng_dir / "scope" / "scope.yaml"
+    validation = validate_scope(scope_path)
+    other_errors = [error for error in validation.errors if "authorisation.confirmed" not in error]
+    if other_errors:
+        for error in other_errors:
+            print(f"ERROR: {error}")
+        return 1
+    scope = validation.scope_data
+    if not isinstance(scope, dict):
+        print("ERROR: scope file is missing or invalid")
+        return 1
+    original = scope_path.read_text(encoding="utf-8")
+    print("Engagement scope:")
+    summary = {
+        "authorized_parties": scope.get("authorized_parties", []),
+        "targets": scope.get("targets", {}),
+        "exclusions": scope.get("exclusions", {}),
+        "allowed_actions": (scope.get("rules_of_engagement") or {}).get("allowed_actions", []),
+        "forbidden_actions": (scope.get("rules_of_engagement") or {}).get("forbidden_actions", []),
+        "engagement": scope.get("engagement", {}),
+    }
+    print(yaml.safe_dump(summary, sort_keys=False).strip())
+    print(
+        "You are about to authorize Pomni-Of to perform penetration testing "
+        "within the scope shown above. Do you confirm that you have authorization "
+        "for this task and approve this AI to operate within that scope? (Yes/No)"
+    )
+    try:
+        answer = input_fn("> ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print("No decision recorded")
+        return 1
+    if answer not in {"yes", "no"}:
+        print("Answer Yes or No; no decision recorded")
+        return 1
+    with workflow_lock(eng_dir):
+        if scope_path.read_text(encoding="utf-8") != original:
+            print("ERROR: scope changed while awaiting approval; review it again")
+            return 1
+        authorization = scope.setdefault("authorisation", {})
+        authorization["confirmed"] = answer == "yes"
+        authorization["confirmed_by"] = (
+            next(str(party).strip() for party in scope["authorized_parties"] if str(party).strip())
+            if answer == "yes"
+            else ""
+        )
+        authorization["confirmed_at"] = datetime.now(UTC).isoformat() if answer == "yes" else ""
+        atomic_text(scope_path, yaml.safe_dump(scope, sort_keys=False))
+    print("Scope approved" if answer == "yes" else "Scope not approved")
+    return 0 if answer == "yes" else 2
 
 
 def check_bootstrap(

@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <b>35 playbooks · 19 references · 14 templates · required execution guard · Hermes-native</b>
+  <b>35 playbooks · 20 references · 14 templates · required execution guard · Hermes-native</b>
 </p>
 
 Violin is a **Hermes-native agentic pentest profile** for supervised, authorised penetration tests — from reconnaissance through safe exploit validation to reporting. It uses Hermes' built-in toolsets, seven routed skills, and the required `violin-guard` plugin at the target-execution boundary. The standalone CLI supports release checks, diagnostics, and administrative recovery; target commands run through the plugin. Violin adds no profile-specific credentials and inherits the provider and tool backends already configured in Hermes.
@@ -143,7 +143,7 @@ The plugin registers twelve Hermes tools from one typed registry:
 | `violin_rebind_pending_batch` | Rebind a pending batch after confirmation |
 | `violin_heartbeat_done` | Clear a completed heartbeat review |
 | `violin_target` | Resolve the approved assessment target |
-| `violin_status` | Explain current tasks, skills, and blockers |
+| `violin_status` | Explain current tasks, skills, blockers, and pending coverage cells |
 
 `violin_exec` is the generic target-command boundary. There are no
 tool-specific execution adapters or binary allowlists. Installed
@@ -225,11 +225,19 @@ The CLI does not replace guarded target execution.
 ```bash
 python scripts/violin_guard.py --help
 python scripts/violin_guard.py init-engagement engagements/example --host example.com
+python scripts/violin_guard.py approve-engagement --eng-dir engagements/example
 python scripts/violin_guard.py check-bootstrap --eng-dir engagements/example
 python scripts/violin_guard.py status --eng-dir engagements/example
 python scripts/violin_guard.py generate-closeout --eng-dir engagements/example
 python scripts/violin_guard.py check-release
 ```
+
+For an owned sandbox target, `init-engagement --ctf --host <lab-host>
+engagements/<exercise>` seeds a lab scope and starter tasks; the operator
+then reviews the scope and answers Yes or No with `approve-engagement`.
+Use a fresh directory for each exercise: the command refuses to overwrite an
+existing scope. For Pomni-Of's evidence-driven probe loop, follow
+[`offensive-exercise-loop.md`](skills/pentest/references/offensive-exercise-loop.md).
 
 `check-command` exposes admission checks for diagnostics and does not execute
 the supplied command.

@@ -98,6 +98,35 @@ def test_status_explains_current_phase_pending_commands_and_skill(tmp_path: Path
     assert result["skill"]["legacy_marker_status"] in {"absent", "obsolete"}
 
 
+def test_status_shows_pending_coverage_without_echoing_evidence(tmp_path: Path) -> None:
+    eng = _engagement(tmp_path)
+    (eng / "state" / "coverage-matrix.yaml").write_text(
+        "coverage:\n"
+        "  api-login:\n    status: tested\n"
+        "    evidence_or_reason: evidence/vuln-research/private-proof.txt\n"
+        "  api-admin:\n    status: pending\n",
+        encoding="utf-8",
+    )
+
+    result = json.loads(service.handle_status({"eng_dir": str(eng)}))
+
+    assert result["coverage_progress"] == {
+        "counts": {"tested": 1, "pending": 1},
+        "next_pending": ["api-admin"],
+        "error": None,
+    }
+    assert "private-proof" not in json.dumps(result["coverage_progress"])
+
+
+def test_status_reports_invalid_coverage_without_crashing(tmp_path: Path) -> None:
+    eng = _engagement(tmp_path)
+    (eng / "state" / "coverage-matrix.yaml").write_text("coverage: [bad]\n", encoding="utf-8")
+
+    result = json.loads(service.handle_status({"eng_dir": str(eng)}))
+
+    assert result["coverage_progress"]["error"] == "coverage must be a mapping"
+
+
 @pytest.mark.parametrize("task_status", ["[~]", "[x]", "[!]", "[-]"])
 def test_review_batch_updates_ptt_and_clears_lock(tmp_path: Path, task_status: str) -> None:
     eng = _engagement(tmp_path)
