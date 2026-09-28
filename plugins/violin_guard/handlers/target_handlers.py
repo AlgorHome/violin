@@ -159,6 +159,28 @@ def _build_status_skill_summary(
     }
 
 
+def _coverage_progress(eng_dir: Path) -> dict:
+    """Summarize unfinished coverage cells without exposing evidence."""
+    matrix = eng_dir / "state" / "coverage-matrix.yaml"
+    if not matrix.is_file():
+        return {"counts": {}, "next_pending": [], "error": "coverage matrix missing"}
+    try:
+        document = yaml.safe_load(matrix.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError) as exc:
+        return {"counts": {}, "next_pending": [], "error": f"coverage matrix unreadable: {exc}"}
+    cells = document.get("coverage") if isinstance(document, dict) else None
+    if not isinstance(cells, dict):
+        return {"counts": {}, "next_pending": [], "error": "coverage must be a mapping"}
+    counts: dict[str, int] = {}
+    pending: list[str] = []
+    for name, cell in cells.items():
+        status = str(cell.get("status") or "pending") if isinstance(cell, dict) else "pending"
+        counts[status] = counts.get(status, 0) + 1
+        if status == "pending" and len(pending) < 5:
+            pending.append(str(name))
+    return {"counts": counts, "next_pending": pending, "error": None}
+
+
 @_serialize_errors
 def handle_status(args, **kwargs):
     if not str(args.get("eng_dir") or "").strip():
@@ -229,6 +251,7 @@ def handle_status(args, **kwargs):
         heartbeat_reason=state.get_heartbeat_reason(eng_dir),
         command_count=counts["commands"],
         message_count=counts["messages"],
+        coverage_progress=_coverage_progress(eng_dir),
         skill=_build_status_skill_summary(
             session_id, binding, binding_reason, route, legacy_marker
         ),
