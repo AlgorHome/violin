@@ -323,6 +323,14 @@ def test_init_engagement_accepts_direct_scope_host(raw_command: str) -> None:
     assert _pre_tool_call_hook(tool_name="terminal", args={"command": raw_command}) is None
 
 
+def test_interactive_scope_approval_is_host_local_administration() -> None:
+    command = (
+        "python3 scripts/violin_guard.py approve-engagement --eng-dir engagements/10.10.10.10-lab"
+    )
+
+    assert _pre_tool_call_hook(tool_name="terminal", args={"command": command}) is None
+
+
 def test_generate_closeout_accepts_target_as_local_report_metadata() -> None:
     command = (
         "python3 scripts/violin_guard.py generate-closeout --eng-dir engagement "
